@@ -11,7 +11,12 @@ library(skimr)
 setwd("C:/Users/GER094/OneDrive - CSIRO/Legacy Publication")
 #epi <- read.csv("./Data/normalized_betasN93_N139_365confidenceNoDups_AgeInc_MappedTAdu_BowtieQ10.csv", check.names = FALSE)
 epi <- read.csv("./Data/normalized_betasN93_N139_greyExcluded_DupIncluded_AgeInc_IDs_mappedTAdu_BowtieQ10.csv", check.names = FALSE)
+
+#exclude one sample of QUA (unsure of sampling date &df$ID!= "206116820065_R02C01)
+#epi_data <- epi_data[!(row.names(epi_data) %in% c("QUA.1")),]
+
 geo = setNames(data.frame(t(epi[,-1])), epi[,1])
+geo <- geo[!(row.names(geo) %in% c("JOY","PUC","PUC.1","PUC.2")),]
 
 ###
 #Data summary & preprocessing
@@ -93,6 +98,7 @@ rmse(methyl_dolphin_aug,truth = Age, estimate = .pred)
 methyl_dolphin_aug$tAge <- exp(methyl_dolphin_aug$Age)-1
 methyl_dolphin_aug$tAgePred <- exp(methyl_dolphin_aug$.pred)-1
 
+par(mar = c(2, 2, 2, 2))
 plot(methyl_dolphin_aug$tAgePred,methyl_dolphin_aug$tAge)
 
 r <- cor(methyl_dolphin_aug$tAge, methyl_dolphin_aug$tAgePred, method = "pearson")
@@ -190,7 +196,7 @@ pred_values <- exp(pred_values)-1
 cor_LOOCV <- cor(age_values, pred_values, method = "pearson")
 cor_LOOCV
 
-
+par(mar = c(2, 2, 2, 2))
 plot(age_values,pred_values)
 
 error <- pred_values - age_values
@@ -246,7 +252,6 @@ all_pred_values <- exp(all_pred_values)-1
 cor_LOIOCV <- cor(all_age_values, all_pred_values, method = "pearson")
 print("Mean Correlation:")
 cor_LOIOCV
-
 
 plot(all_age_values,all_pred_values)
 
