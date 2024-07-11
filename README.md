@@ -5,6 +5,8 @@ The chip is described here: https://doi.org/10.1038/s41467-022-28355-z
 We used data of Indo-Pacific bottlenose dolphins (_Tursiops aduncus_). 
 More details on the approaches and the code are provided in the code file. 
 
+We also provide an example of how to apply a calibrated epigenetic clock to samples of unknown epigenetic or chronological age. 
+
 # permutated linear mixed models
 To assess if epigenetic age is influenced by social variables, we employed permutated linear mixed models. 
 Details are provided in the code file itself. 
