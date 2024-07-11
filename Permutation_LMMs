@@ -1,0 +1,303 @@
+#################################################################################
+## this script uses permutated linear mixed models and non-permutated linear   ##
+## mixed models to investigate the effect of social bonds on epigenetic ageing ##
+#################################################################################
+
+
+#load required packages
+
+library(ggpubr)
+library(ggplot2)
+library(glmmTMB)
+library(car)
+library(readxl)
+library(lme4)
+library(lmerTest)
+library(ggeffects)
+
+
+#import data
+setwd("C:/Users/GER094/OneDrive - CSIRO/Legacy Publication")
+fittedValues <- read.csv("Data/SocialAndBiolAgeData365_MappedTAdu_BowtieQ10_noPUC19.csv") 
+
+#restrict data to males only
+fittedValues_Males <- fittedValues[fittedValues$Sex=="Male",]
+#create dataset consisting of all animals where chronological age is known with an accuracy <= 6 months
+fittedValues_HalfYear <- fittedValues_Males[(fittedValues_Males$Confidence<183),]
+
+## Explore the data a bit first ------------------------------------------------
+
+# Prepare by removing rows with NA's for any of the variables of interest)
+dat <- droplevels(fittedValues[!is.na(fittedValues$transAge_tidymodels_LOIOCV) &
+                                fittedValues$Sex!='Female' &
+                                !is.na(fittedValues$NormStrength)&
+                                !is.na(fittedValues$YearSampled), ])
+
+  table(dat$YearSampled)
+
+  sort(colSums(table(dat$YearSampled, dat$DolphinID)))
+
+  # 29 animals in 1 yr, 7 in 2 yrs, 1 in 3 yrs, 1 in 4 yrs
+
+# Set YearSampled, DolphinID and Sex as factors (not characters)
+  dat$YearSampled<- factor(dat$YearSampled)
+  dat$DolphinID<- factor(dat$DolphinID)
+  dat$Sex<- factor(dat$Sex)
+  table(dat$YearSampled)
+  table(dat$DolphinID)
+  table(dat$Sex)
+
+# Distribution outcome
+  ggplot(dat, aes(transAge_tidymodels_LOIOCV)) +
+    geom_histogram(fill= "white", col= "black", binwidth= 2)
+
+# Collinearity and distribution longterm predictors
+  round(cor(sapply(dat[, c("NormStrength", "GroupSizeMale",
+                                    "AgeDB", "CV")],
+                   as.numeric), use= "pairwise"), 3) 
+
+# Let's have a quick look
+  nrow(dat)              # The number of observations we can use
+  nlevels(dat$DolphinID) # This will be the sample size in each of the permutation models below
+  nlevels(dat$YearSampled) # This will be the maximum n years in any of the permutation models
+  length(which(dat$Sex=="Female")) # To verify that females were excluded
+  length(which(dat$Sex=="Male"))
+  table(dat$DolphinID)
+
+  # Because of this...
+  sort(table(dat$DolphinID))
+
+  # ...we take a permutation approach
+
+## Permutate data and fit model (e.g. 1000 times) ------------------------------
+
+# We can ignore the warning messages 
+#  (these suggest that year could possibly be dropped as a random effect)
+  set.seed(321)
+  sim.lmer<- replicate(1e3,
+                       lmer(transAge_tidymodels_LOIOCV ~ NormStrength + GroupSizeMale + CV + AgeDB + (1|YearSampled),
+                            data= dat[ave(dat$transAge_tidymodels_LOIOCV, dat$DolphinID,
+                                          FUN= function(x){
+                                                 sample.int(length(x))})<= 1, ]),
+                       simplify= F)
+
+
+  # to run model the with estimates gained from various clocks, replace 'transAge_tidymodels_LOIOCV' with one of the following:
+  # BottlenoseBarratcloughGeneral, BottlenoseBarratcloghSkin, BottlenoseRobeckGeneral, BottlenoseRobeckSkin, OdontoceteGeneral, OdontoceteSkin, Universal3
+
+  # Extract model coefficients
+    sim.fixef<- data.frame(t(sapply(sim.lmer, fixef)))
+  
+  # Median values of simulated model coefficients + 95% and 99% CIs
+  t(sapply(sim.fixef, quantile, c(.025, .5, .975))) 
+  t(sapply(sim.fixef, quantile, c(.005, .5, .995)))  
+
+# Non-permutated linear mixed model --------------------------------------------
+# Includes individual ID as random effect to account for multiple samples
+  
+  lmer.01 <- lmer(transAge_tidymodels_LOIOCV ~ NormStrength + GroupSizeMale + CV + AgeDB + (1|DolphinID) + (1|YearSampled), data = dat, na.action = na.omit)
+  
+  # summary of model results
+  summary(lmer.01)  
+  
+  # check for colinaerity
+  car::vif(lmer.01)
+ 
+  
+  # Extract the residuals from the fitted model
+  residuals <- resid(lmer.01)
+  
+  # Create a Q-Q plot of the residuals
+  qqnorm(residuals)
+  qqline(residuals)  # Add a reference line to the Q-Q plot
+
+
+
+
+# Plot of epigenetic versus chronological ages ---------------------------------
+
+
+# choose column containing the epigenetic age estimates to be displayed
+  
+#error LOOCV
+errorLOOCV <- fittedValues$transAge_tidymodels_LOIOCV - fittedValues$transAge_tidymodels_LOIOCV
+MAE_LOOCV <- sqrt(median(errorLOOCV^2))
+MAE_LOOCV
+
+# pearson correlation LOIOCV
+r_LOOCV <- cor(fittedValues$AgeDB, fittedValues$transAge_tidymodels_LOIOCV, method = "pearson")
+r_LOOCV
+
+
+#plot LOIOCV
+p = ggplot(fittedValues, aes(x=AgeDB, y = transAge_tidymodels_LOIOCV, color=)) +
+  ylim(0,40) + xlim(0,40) +
+  ggtitle("LOIOCV") +
+  geom_point(shape=1, size=2) +
+  geom_smooth(method = "lm", se = FALSE, fullrange = TRUE, colour="deepskyblue4") +
+  geom_abline(intercept = 0, slope = 1, linetype = 3)+
+  xlab("Chronological Age") +
+  ylab("Epigenetic Age") +
+  theme_bw()
+
+theme(axis.title=element_blank(), axis.text = element_text(size=14, colour = "black"),);p
+
+p + annotate("text", x = 0, y = 0, 
+             label = paste("R² =", round(r_LOOCV, 2), "\nMAE =", round(MAE_LOOCV, 2)), 
+             hjust = 0, vjust = -10.5
+             )
+
+#ggsave("Plot_BottlenoseBarratcloughSkin.tiff", units="cm", width=15, height=12, dpi=300)
+
+#####
+# Plot epigenetic clock for all individuals where chronological age is known with an accuracy of <=365
+####
+
+#error LOOCV
+errorLOOCV <- fittedValues$transAge_tidymodels_LOIOCV - fittedValues$AgeDB
+MAE_LOOCV <- sqrt(median(errorLOOCV^2))
+MAE_LOOCV
+
+# pearson correlation LOIOCV
+r_LOOCV <- cor(fittedValues$AgeDB, fittedValues$transAge_tidymodels_LOIOCV, method = "pearson")
+r_LOOCV
+
+fittedValues$inAnalyses <- factor(fittedValues$inAnalyses)
+#plot LOIOCV
+Plot = ggplot(fittedValues, aes(x=AgeDB, y = transAge_tidymodels_LOIOCV, col = inAnalyses)) +
+  #ylim(0,40) + xlim(0,40) +
+  #geom_point(aes(colour = factor(inAnalyses)), size = 2) +
+  geom_point(size=2, (aes(shape = inAnalyses))) +
+  geom_smooth(method = "lm", se = FALSE, fullrange = TRUE, colour="deepskyblue4") +
+  geom_abline(intercept = 0, slope = 1, linetype = 3)+
+  xlab("Chronological Age") +
+  ylab("Epigenetic Age") +
+  theme_bw()
+Plot + scale_color_manual(values = c("black", "black")) + scale_shape_manual(values = c(21,16)) + theme(legend.position = "none")
+
+#ggsave("Plot_EpigeneticAgeAllSamples.tiff", units="cm", width=15, height=12, dpi=300)
+
+## Prediction plots ------------------------------------------------------------
+
+## Predictions Normalised Strength
+  # Generate predictions for each permutated model (takes ~5min)
+  n<- seq(min(dat$NormStrength), max(dat$NormStrength), length.out= 1e2)
+  sim.pred.NS<- do.call(rbind,
+                        sapply(sim.lmer,
+                               FUN= function(x)
+                                    {ggpredict(x, terms= "NormStrength [n]")},
+                               simplify= F))
+    sim.pred.NS$ID<- factor(rep(paste("Permutation", sprintf("%04.f", 1:1000)),
+                                each= 1e2)); rm(n)
+
+    sim.pred.NS <- as.data.frame(sim.pred.NS)
+  # From the above, extract predictions of median model at min and max
+  sim.pred.NS.med<-
+    data.frame(x= c(min(dat$NormStrength), max(dat$NormStrength)),
+               predicted= c(median(sim.pred.NS[sim.pred.NS$x== min(dat$NormStrength), "predicted"]),
+                            median(sim.pred.NS[sim.pred.NS$x== max(dat$NormStrength), "predicted"])))
+
+
+  ## Predictions GroupSize
+  # Generate predictions for each permutated model (takes ~5min)
+  n<- seq(min(dat$GroupSizeMale), max(dat$GroupSizeMale), length.out= 1e2)
+  sim.pred.GS<- do.call(rbind,
+                        sapply(sim.lmer,
+                               FUN= function(x)
+                               {ggpredict(x, terms= "GroupSizeMale [n]")},
+                               simplify= F))
+  sim.pred.GS$ID<- factor(rep(paste("Permutation", sprintf("%04.f", 1:1000)),
+                              each= 1e2)); rm(n)
+  
+  sim.pred.GS <- as.data.frame(sim.pred.GS)
+  
+  # From the above, extract predictions of median model at min and max
+  sim.pred.GS.med<-
+    data.frame(x= c(min(dat$GroupSizeMale), max(dat$GroupSizeMale)),
+               predicted= c(median(sim.pred.GS[sim.pred.GS$x== min(dat$GroupSizeMale), "predicted"]),
+                            median(sim.pred.GS[sim.pred.GS$x== max(dat$GroupSizeMale), "predicted"])))
+  
+  
+
+  # Plot and overlay predictions of median model
+  theme_set(theme_bw())
+
+  ggarrange(
+    ggplot() +
+      geom_point(data= dat, aes(NormStrength, transAge_tidymodels_LOIOCV)) +
+      geom_line(data= sim.pred.NS, aes(x, predicted, group= ID), show.legend= F,
+                col= "steelblue", alpha= .01) +
+      geom_line(data= sim.pred.NS.med, aes(x, predicted), col= "steelblue", lwd=1) +
+      labs(x= "Social Bond Strength", y= "Epigenetic Age"),
+    ggplot() +
+      geom_point(data= dat, aes(GroupSizeMale, transAge_tidymodels_LOIOCV)) +
+      geom_line(data= sim.pred.GS, aes(x, predicted, group= ID), show.legend= F,
+                col= "steelblue", alpha= .01) +
+      geom_line(data= sim.pred.GS.med, aes(x, predicted), col= "steelblue", lwd=1) +
+      labs(x= "Group Size", y=""),
+    ncol= 2)
+  
+  #ggsave("NormStrengthAndGroupSize.tiff", dpi = 300, units = "cm", height = 10, width = 15)
+  
+# Prediction plots for non-significant variables and chronological age to be included in SI
+  
+  ## Predictions CV of Normalised Node Strength
+  # Generate predictions for each permutated model (takes ~5min)
+  n<- seq(min(dat$CV), max(dat$CV), length.out= 1e2)
+  sim.pred.CV<- do.call(rbind,
+                        sapply(sim.lmer,
+                               FUN= function(x)
+                               {ggpredict(x, terms= "CV [n]")},
+                               simplify= F))
+  sim.pred.CV$ID<- factor(rep(paste("Permutation", sprintf("%04.f", 1:1000)),
+                              each= 1e2)); rm(n)
+  
+  sim.pred.CV <- as.data.frame(sim.pred.CV)
+  
+  # From the above, extract predictions of median model at min and max
+  sim.pred.CV.med<-
+    data.frame(x= c(min(dat$CV), max(dat$CV)),
+               predicted= c(median(sim.pred.CV[sim.pred.CV$x== min(dat$CV), "predicted"]),
+                            median(sim.pred.CV[sim.pred.CV$x== max(dat$CV), "predicted"])))
+  
+  
+  ## Predictions Chronological Age
+  # Generate predictions for each permutated model (takes ~5min)
+  n<- seq(min(dat$AgeDB), max(dat$AgeDB), length.out= 1e2)
+  sim.pred.Age<- do.call(rbind,
+                        sapply(sim.lmer,
+                               FUN= function(x)
+                               {ggpredict(x, terms= "AgeDB [n]")},
+                               simplify= F))
+  sim.pred.Age$ID<- factor(rep(paste("Permutation", sprintf("%04.f", 1:1000)),
+                              each= 1e2)); rm(n)
+  
+  sim.pred.Age <- as.data.frame(sim.pred.Age)
+  
+  # From the above, extract predictions of median model at min and max
+  sim.pred.Age.med<-
+    data.frame(x= c(min(dat$AgeDB), max(dat$AgeDB)),
+               predicted= c(median(sim.pred.Age[sim.pred.Age$x== min(dat$AgeDB), "predicted"]),
+                            median(sim.pred.Age[sim.pred.Age$x== max(dat$AgeDB), "predicted"])))
+  
+  
+  
+  # Plot and overlay predictions of median model
+  theme_set(theme_bw())
+  
+  ggarrange(
+    ggplot() +
+      geom_point(data= dat, aes(CV, transAge_tidymodels_LOIOCV)) +
+      geom_line(data= sim.pred.CV, aes(x, predicted, group= ID), show.legend= F,
+                col= "steelblue", alpha= .01) +
+      geom_line(data= sim.pred.CV.med, aes(x, predicted), col= "steelblue", lwd=1) +
+      labs(x= "CV", y= "Epigenetic Age"),
+    ggplot() +
+      geom_point(data= dat, aes(AgeDB, transAge_tidymodels_LOIOCV)) +
+      geom_line(data= sim.pred.Age, aes(x, predicted, group= ID), show.legend= F,
+                col= "steelblue", alpha= .01) +
+      geom_line(data= sim.pred.Age.med, aes(x, predicted), col= "steelblue", lwd=1) +
+      labs(x= "Chronological Age", y= ""),
+    ncol= 2)
+  
+  #ggsave("CVAndAge.tiff", dpi = 300, units = "cm", height = 10, width = 15)
