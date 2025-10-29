@@ -9,6 +9,6 @@ We also provide an example of how to apply a calibrated epigenetic clock to samp
 
 # linear mixed models
 To assess if epigenetic age is influenced by social variables, we employed linear mixed models. 
-Details are provided in the R code 'Revised_statistics_June2025.R' file. 
+Details are provided in the R code 'Updated Script August 2025.R' file. 
 
 Example files for both codes can be found in the supplementary material of our publication: (_to be inserted_).
